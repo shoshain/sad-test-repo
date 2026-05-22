@@ -1,0 +1,9 @@
+{
+  "case_id": "stakeholder-semi-technical-001",
+  "input_path": "specs/001-personal-greeting/walkthroughs/semi-technical.md",
+  "changed_contracts": [
+    "buildGreeting(name)",
+    "contracts/example.md"
+  ],
+  "notes": "Each modified contract must appear in the semi-technical walkthrough."
+}

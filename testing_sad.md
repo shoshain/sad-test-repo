@@ -1,41 +1,61 @@
-# Testing SAD end-to-end
+# Testing SAD end-to-end (PowerShell)
 
 > Concrete, copy-pasteable plan for exercising every advertised piece of the [SAD methodology kit](https://github.com/shoshain/sad) against this throwaway consuming project. Every section is independent; you can run sections out of order, but the lifecycle sections (§5–§10) chain.
+>
+> **Local layout:** methodology kit at **`C:\SAD`**, test target at **`C:\SAD-testing-repo`** (this file).
+>
+> **Shell:** Windows PowerShell 5.1+ or PowerShell 7+. All commands below are PowerShell — no Git Bash required.
+
+## Two directories (do not mix them up)
+
+| Path | Purpose |
+|------|---------|
+| **`C:\SAD`** | SAD methodology kit — `sad-init.ps1`, scripts, templates, evals |
+| **`C:\SAD-testing-repo`** | Throwaway consuming project — **run all test commands here** |
+
+## Session bootstrap (paste at the start of every new window)
+
+```powershell
+$SAD = "C:\SAD"
+$REPO = "C:\SAD-testing-repo"
+Set-Location $REPO
+```
 
 ## Conventions used in this doc
 
-- `$ ...` — POSIX (bash, macOS / Linux / WSL / Git Bash).
-- `PS> ...` — Windows native PowerShell.
-- Where both work, the POSIX form is shown; PowerShell siblings are noted inline.
-- "the SAD kit" means `https://github.com/shoshain/sad`, cloned next to this repo.
-- "this repo" means `sad-test-repo` (where this file lives).
+- **Copy only the lines inside code blocks** — do not type `PS>` or prompt prefixes.
+- Use **`;`** to chain commands on one line (not `&&`).
+- Use **backslash paths** (`.\sad\scripts\doctor.ps1`) or **`Join-Path`** — not `/c/...` Git Bash paths.
+- After `.ps1` / `node` / `python` / `git` commands, print the exit code on its **own line**:
+  `Write-Output $LASTEXITCODE` — do **not** use `Write-Output $LASTEXITCODE` (some PSReadLine setups throw *illegal characters in path* when pasting that string).
+- "the SAD kit" means **`C:\SAD`** (upstream: [shoshain/sad](https://github.com/shoshain/sad)).
+- "this repo" means **`C:\SAD-testing-repo`** (upstream: [shoshain/sad-test-repo](https://github.com/shoshain/sad-test-repo)).
 
 ---
 
 ## 0. One-time setup
 
-```bash
-# Choose a workspace folder.
-$ mkdir -p ~/sad-workspace && cd ~/sad-workspace
-
-# Clone the methodology kit and the test repo as siblings.
-$ git clone https://github.com/shoshain/sad.git
-$ git clone https://github.com/shoshain/sad-test-repo.git
-
-# Confirm both are present.
-$ ls -la
-# drwxr-xr-x  sad
-# drwxr-xr-x  sad-test-repo
-```
-
-PowerShell:
+Confirm both local folders exist and are git checkouts:
 
 ```powershell
-PS> mkdir $HOME\sad-workspace; cd $HOME\sad-workspace
-PS> git clone https://github.com/shoshain/sad.git
-PS> git clone https://github.com/shoshain/sad-test-repo.git
-PS> Get-ChildItem
+$SAD = "C:\SAD"
+$REPO = "C:\SAD-testing-repo"
+Test-Path $SAD, $REPO
+# expect: True True
+
+Set-Location $REPO
+git status
+Get-ChildItem $SAD\scripts\sad-init.ps1, $REPO\testing_sad.md
 ```
+
+**Only if a folder is missing** — clone to these exact paths (siblings on `C:\`):
+
+```powershell
+git clone https://github.com/shoshain/sad.git C:\SAD
+git clone https://github.com/shoshain/sad-test-repo.git C:\SAD-testing-repo
+```
+
+After §0, run **`Set-Location $REPO`** before every section unless a block already does so.
 
 **Prereqs**
 
@@ -43,8 +63,8 @@ PS> Get-ChildItem
 |---|---|---|
 | `git` | any | clone + commit |
 | `node` | ≥ 22.6 | eval harness uses `--experimental-strip-types`; toy project tests |
-| `python` | ≥ 3.10 | reference MCP server skeleton |
-| `bash` **or** `pwsh` | any | run the SAD scripts |
+| `python` | ≥ 3.10 | reference MCP server skeleton; optional YAML check in §12 |
+| PowerShell | 5.1+ or 7+ | run all SAD `.ps1` scripts |
 
 ---
 
@@ -52,65 +72,48 @@ PS> Get-ChildItem
 
 This repo ships a minimal feature (`src/greeting.js`) with unit tests. Run them **before** installing SAD to confirm Node and the workspace are healthy.
 
-```bash
-$ cd ~/sad-workspace/sad-test-repo
-$ node --version          # must be >= 22.6
-$ npm test                # runs: node --test src/greeting.test.js
-# expect: all tests pass (happy path, boundaries, rejections)
-```
-
-PowerShell:
-
 ```powershell
-PS> cd $HOME\sad-workspace\sad-test-repo
-PS> node --version
-PS> npm test
+Set-Location $REPO
+node --version          # must be >= 22.6
+npm test                # runs: node --test src/greeting.test.js
+# expect: all tests pass (happy path, boundaries, rejections)
 ```
 
 Quick CLI smoke (no test runner):
 
-```bash
-$ node src/greeting.js Sam
+```powershell
+Set-Location $REPO
+node src/greeting.js Sam
 # expect: Hello, Sam.
-$ node src/greeting.js "" ; echo "exit=$?"
-# expect: error message on stderr; exit=1
+node src/greeting.js ""
+# expect: error message on stderr; exit code 1
 ```
 
-**Pass condition.** `npm test` exits 0 with no failures.
+**Pass condition.** `npm test` exits 0 with no failures (`$LASTEXITCODE -eq 0`).
 
 ---
 
 ## 1. Install SAD into this repo
 
-The website promises: one command, five adapters auto-detected, optional `--persistent` wiring, `--dry-run` and `--minimal` flags.
+The website promises: one command, five adapters auto-detected, optional `-Persistent` wiring, `-DryRun` and `-Minimal` flags.
 
 ### 1.1 Preview the install (no writes)
 
-```bash
-$ cd ~/sad-workspace/sad-test-repo
-$ ../sad/scripts/sad-init.sh --dry-run .
-# expect: [sad-init] DRY: ... for every file the installer would write; no actual mutation
-```
-
-PowerShell:
-
 ```powershell
-PS> cd $HOME\sad-workspace\sad-test-repo
-PS> ..\sad\scripts\sad-init.ps1 -TargetDir . -DryRun
+Set-Location $REPO
+& "$SAD\scripts\sad-init.ps1" -TargetDir $REPO -DryRun
+# expect: [sad-init] DRY: ... for every file the installer would write; no actual mutation
+git status
+# expect: clean working tree
 ```
 
-**Pass condition.** Output ends with `done. target: ...` and the working tree (`git status`) is **clean**.
+**Pass condition.** Output ends with `done. target: ...` and `git status` is **clean**.
 
 ### 1.2 Real install — full footprint, persistent
 
-```bash
-$ ../sad/scripts/sad-init.sh --persistent .
-```
-
-PowerShell:
-
 ```powershell
-PS> ..\sad\scripts\sad-init.ps1 -TargetDir . -Persistent
+Set-Location $REPO
+& "$SAD\scripts\sad-init.ps1" -TargetDir $REPO -Persistent
 ```
 
 **Pass conditions:**
@@ -119,22 +122,24 @@ PS> ..\sad\scripts\sad-init.ps1 -TargetDir . -Persistent
 - `.sad/`, `commands/`, `agents/`, `hooks/`, `evals/`, `examples/`, `reference/` all appear in this repo.
 - `LIFECYCLE.md`, `CHEATSHEET.md`, `QUICKSTART.md`, `MATURITY.md`, `ROLES.md`, `MANIFESTO.md`, `NOVEL.md`, `GLOSSARY.md`, `DAEMON.md`, `ATTRIBUTION.md`, `SAD_USER_GUIDE.md` all land at this repo's root.
 - `AGENTS.md` is written at the root with the declared-precedence block.
-- If the adapter detected was `claude-code`, `.claude/settings.json` exists (Windows variant on Windows; POSIX variant on macOS/Linux), `.claude/skills/sad/SKILL.md` exists, and `.claude/commands/sad-*.md` contains 21 pointer files.
+- If the adapter detected was `claude-code`, `.claude/settings.json` exists (Windows variant on Windows), `.claude/skills/sad/SKILL.md` exists, and `.claude/commands/sad-*.md` contains 21 pointer files.
 - The installer ends by running `/sad-doctor` and prints its report.
 
 ### 1.3 Minimal install (alternative path — wipe and redo)
 
-If you want to also test `--minimal`, in a **fresh clone** of `sad-test-repo`:
+If you want to also test `-Minimal`, reset this repo first (§15), then:
 
-```bash
-$ ../sad/scripts/sad-init.sh --minimal .
+```powershell
+Set-Location $REPO
+& "$SAD\scripts\sad-init.ps1" -TargetDir $REPO -Minimal
 # expect: .sad/, methodology core docs, adapter, but NO commands/, agents/, hooks/, evals/, examples/
 ```
 
 ### 1.4 Verify cross-platform script parity
 
-```bash
-$ ls -la .sad/scripts/
+```powershell
+Set-Location $REPO
+Get-ChildItem .sad\scripts\ | Sort-Object Name | Format-Table Name
 # expect both .sh and .ps1 for each of:
 #   check-tier-approvals, create-feature, doctor, drift-scan, update-state, maturity-report
 ```
@@ -143,35 +148,37 @@ $ ls -la .sad/scripts/
 
 ## 2. Run /sad-doctor (health check)
 
-Website claim: 30-second health check, green/yellow/red, read-only, `--json` and `--quiet` flags.
+Website claim: 30-second health check, green/yellow/red, read-only, `-Json` and `-Quiet` flags.
 
 ### 2.1 Default (text)
 
-```bash
-$ bash .sad/scripts/doctor.sh
-```
-
-PowerShell:
-
 ```powershell
-PS> .\.sad\scripts\doctor.ps1
+Set-Location $REPO
+.\.sad\scripts\doctor.ps1
+Write-Output $LASTEXITCODE
 ```
 
 **Pass condition.** Output begins with `/sad-doctor — N green, N yellow, N red` and lists every check. Exit code 0 if no red findings; 1 if any. On a freshly-installed empty repo expect a couple of yellows (no features yet, stakeholders still have `[List people` placeholders) — that is normal.
 
 ### 2.2 JSON mode
 
-```bash
-$ bash .sad/scripts/doctor.sh --json > doctor.json && cat doctor.json | head -20
+```powershell
+Set-Location $REPO
+.\.sad\scripts\doctor.ps1 -Json | Out-File doctor.json -Encoding utf8
+Get-Content doctor.json -TotalCount 20
+# or validate structure:
+.\.sad\scripts\doctor.ps1 -Json | ConvertFrom-Json | Select-Object -ExpandProperty summary
 ```
 
-**Pass condition.** Output is valid JSON; pipe through `jq .summary` or `python -m json.tool` to confirm.
+**Pass condition.** Output is valid JSON.
 
 ### 2.3 Quiet mode (CI use)
 
-```bash
-$ bash .sad/scripts/doctor.sh --quiet ; echo "exit=$?"
-# expect: no stdout; "exit=0" or "exit=1"
+```powershell
+Set-Location $REPO
+.\.sad\scripts\doctor.ps1 -Quiet
+Write-Output $LASTEXITCODE
+# expect: no stdout; then Write-Output prints 0 or 1
 ```
 
 ---
@@ -182,22 +189,18 @@ Website claim: `/sad-constitution --template <name>` skips the interactive start
 
 ### 3.1 Pick a starter and copy it
 
-```bash
-# This repo is a tiny library-style example; use the library starter.
-$ cp .sad/templates/constitutions/library.md .sad/memory/constitution.md
-```
-
-PowerShell:
+This repo is a tiny library-style example; use the library starter:
 
 ```powershell
-PS> Copy-Item .sad\templates\constitutions\library.md .sad\memory\constitution.md -Force
+Set-Location $REPO
+Copy-Item .sad\templates\constitutions\library.md .sad\memory\constitution.md -Force
 ```
 
 ### 3.2 Fill the placeholders
 
-Open `.sad/memory/constitution.md` in your editor. Replace `[name]`, `[who]`, etc. For this test repo, use:
+Open `.sad\memory\constitution.md` in your editor. Replace `[name]`, `[who]`, etc. For this test repo, use:
 
-- **Project name:** `sad-test-repo`
+- **Project name:** `SAD-testing-repo`
 - **Primary users:** `engineers testing SAD`
 - **Risk class:** `low`
 - **Maturity level (initial):** `Level 0` (solo SAD)
@@ -206,47 +209,45 @@ Resolve each tension at the bottom with one sentence; for this test feature just
 
 ### 3.3 Re-run /sad-doctor — constitution checks should turn green
 
-```bash
-$ bash .sad/scripts/doctor.sh | grep -E '^\[OK\] constitution'
-# expect: [OK]  constitution.identity, [OK]  constitution.maturity (constitution.articles may stay yellow until you add A1..A3)
+```powershell
+Set-Location $REPO
+.\.sad\scripts\doctor.ps1 | Select-String '^\[OK\].*constitution'
+# expect: [OK] constitution.identity, [OK] constitution.maturity
+# (constitution.articles may stay yellow until you add A1..A3)
 ```
 
 ---
 
 ## 4. Fill the stakeholder tier files
 
-```bash
-$ ls .sad/stakeholders/
-# non-technical.md  semi-technical.md  technical.md
+```powershell
+Set-Location $REPO
+Get-ChildItem .sad\stakeholders\
+# expect: non-technical.md  semi-technical.md  technical.md
 ```
 
 Open each and replace `[List people, roles, ...]` with at least one name (use your own name across all three for this test — Solo SAD assumes that).
 
 Re-run doctor:
 
-```bash
-$ bash .sad/scripts/doctor.sh | grep stakeholders
-# expect three green rows
+```powershell
+.\.sad\scripts\doctor.ps1 | Select-String stakeholders
+# expect three [OK] rows
 ```
 
 ---
 
 ## 5. Scaffold a feature with `create-feature`
 
-Website claim: `create-feature.{sh,ps1}` scaffolds the full per-feature artifact set under `specs/<NNN>-<slug>/`.
-
-```bash
-$ bash .sad/scripts/create-feature.sh 001 personal-greeting
-# expect: Scaffolded /path/to/sad-test-repo/specs/001-personal-greeting
-```
-
-PowerShell:
+Website claim: `create-feature.ps1` scaffolds the full per-feature artifact set under `specs/<NNN>-<slug>/`.
 
 ```powershell
-PS> .\.sad\scripts\create-feature.ps1 001 personal-greeting
+Set-Location $REPO
+.\.sad\scripts\create-feature.ps1 001 personal-greeting
+# expect: Scaffolded C:\SAD-testing-repo\specs\001-personal-greeting
 ```
 
-**Pass condition.** `ls specs/001-personal-greeting/` shows:
+**Pass condition.** `Get-ChildItem specs\001-personal-greeting\` shows:
 
 ```
 feature.spec.md
@@ -275,7 +276,7 @@ This section exercises steps 3–8 from `LIFECYCLE.md`, with the tier-routed app
 
 ### 6.1 Fill the requirements draft (step 3, `/sad-brainstorm`)
 
-Open `specs/001-personal-greeting/requirements.draft.md` and replace placeholders with:
+Open `specs\001-personal-greeting\requirements.draft.md` and replace placeholders with:
 
 ```markdown
 ## Problem
@@ -294,7 +295,7 @@ Returning users want a sense of continuity — recognition by the app at login.
 
 ### 6.2 Fill the spec (step 4, `/sad-specify`)
 
-Open `specs/001-personal-greeting/feature.spec.md`. Replace the template's `<feature name>` and add:
+Open `specs\001-personal-greeting\feature.spec.md`. Replace the template's `<feature name>` and add:
 
 ```markdown
 ## 2. Capabilities
@@ -309,81 +310,84 @@ Open `specs/001-personal-greeting/feature.spec.md`. Replace the template's `<fea
 
 ### 6.3 Fill the plan + data-model + contracts (step 7, `/sad-plan`)
 
-In `feature.plan.md`, in `data-model.md`, and in `contracts/example.md`, replace `<feature name>` and the example greeting fields with the same shape but referencing this repo's `src/greeting.js`.
+In `feature.plan.md`, in `data-model.md`, and in `contracts\example.md`, replace `<feature name>` and the example greeting fields with the same shape but referencing this repo's `src/greeting.js`.
 
 ### 6.4 Author the three walkthroughs (step 8, `/sad-walkthrough`)
 
 Open each of:
 
-- `walkthroughs/non-technical.md` — plain English, no code.
-- `walkthroughs/semi-technical.md` — contracts table.
-- `walkthroughs/technical.md` — reviewer rollup.
+- `walkthroughs\non-technical.md` — plain English, no code.
+- `walkthroughs\semi-technical.md` — contracts table.
+- `walkthroughs\technical.md` — reviewer rollup.
 
 For each, replace `<name>, <date>` in the Approval line with your name and today's date, and tick the checkbox: `- [x]`.
+
+Example:
+
+```markdown
+- [x] Non-technical reviewer: Jane Tester, 2026-05-22
+```
 
 ### 6.5 Verify the tier-routed gate
 
 This is the load-bearing test. The check-tier-approvals script must report all three approved.
 
-```bash
-$ bash .sad/scripts/check-tier-approvals.sh specs/001-personal-greeting ; echo "exit=$?"
-# expect: exit=0
-```
-
-PowerShell:
-
 ```powershell
-PS> .\.sad\scripts\check-tier-approvals.ps1 specs\001-personal-greeting; "exit=$LASTEXITCODE"
-# expect: exit=0
+Set-Location $REPO
+.\.sad\scripts\check-tier-approvals.ps1 specs\001-personal-greeting
+Write-Output $LASTEXITCODE
+# expect: 0
 ```
 
-**Pass conditions:**
+**Negative test (optional but recommended):**
 
-- All three approval checkboxes are detected (`exit=0`).
-- Untick one checkbox and re-run: `exit=2`. Re-tick and confirm 0 again.
+1. Open `specs\001-personal-greeting\walkthroughs\non-technical.md`
+2. Change `- [x]` to `- [ ]` on the Approval line; save.
+3. Re-run the command above — `Write-Output $LASTEXITCODE` should print **`2`** and stderr names `Non-technical`.
+4. Change back to `- [x]`; save; re-run — expect **`0`**.
 
 ### 6.6 Run /sad-doctor — feature should now have all artifacts
 
-```bash
-$ bash .sad/scripts/doctor.sh | grep feature.001
-# expect: [OK]  feature.001-personal-greeting.artifacts -- has all required artifacts
+```powershell
+Set-Location $REPO
+.\.sad\scripts\doctor.ps1 | Select-String feature.001
+# expect: [OK] feature.001-personal-greeting.artifacts -- has all required artifacts
 ```
 
 ---
 
 ## 7. Run the analysis + drift-scan
 
-### 7.1 Drift scan (no reconciliation yet → should flag the feature)
+### 7.1 Drift scan
 
-```bash
-$ bash .sad/scripts/drift-scan.sh ; echo "exit=$?"
-# expect (because reconciliation.md is still a stub): exit=2 unless you filled it
+`drift-scan.ps1` checks that every folder under `specs/` has a `reconciliation.md` file. It does not parse file contents.
+
+**Before** `reconciliation.md` exists (or if you delete it to test):
+
+```powershell
+Set-Location $REPO
+.\.sad\scripts\drift-scan.ps1
+Write-Output $LASTEXITCODE
+# expect: 2 and MISSING_RECONCILIATION ... if the file is absent
 ```
 
-After you fill `reconciliation.md` with a "coherent" verdict:
+After you fill `specs\001-personal-greeting\reconciliation.md` with a **coherent** verdict (replace stub placeholders; state that spec, plan, and `src/greeting.js` align):
 
-```bash
-$ bash .sad/scripts/drift-scan.sh ; echo "exit=$?"
-# expect: exit=0
+```powershell
+.\.sad\scripts\drift-scan.ps1
+Write-Output $LASTEXITCODE
+# expect: 0 (no output when all features have reconciliation.md)
 ```
 
 ### 7.2 Update the SAD state file
 
-```bash
-$ bash .sad/scripts/update-state.sh --feature 001-personal-greeting
-$ bash .sad/scripts/update-state.sh --phase walkthrough
-$ bash .sad/scripts/update-state.sh --last-command /sad-walkthrough
-$ cat .sad/state/sad-state.md
-# expect: the Slug/Phase/Last command lines now reflect the values above
-```
-
-PowerShell:
-
 ```powershell
-PS> .\.sad\scripts\update-state.ps1 -Feature 001-personal-greeting
-PS> .\.sad\scripts\update-state.ps1 -Phase walkthrough
-PS> .\.sad\scripts\update-state.ps1 -LastCommand /sad-plan
-PS> Get-Content .sad\state\sad-state.md
+Set-Location $REPO
+.\.sad\scripts\update-state.ps1 -Feature 001-personal-greeting
+.\.sad\scripts\update-state.ps1 -Phase walkthrough
+.\.sad\scripts\update-state.ps1 -LastCommand /sad-walkthrough
+Get-Content .sad\state\sad-state.md
+# expect: Slug / Phase / Last command lines reflect the values above
 ```
 
 ---
@@ -392,29 +396,58 @@ PS> Get-Content .sad\state\sad-state.md
 
 Website claim: Node 22+ runner, no third-party dependencies, deterministic+LLM-judge+SME-calibrator graders, exit 0 if all pass.
 
-```bash
-$ cd evals
-$ npm run eval
+### 8.0 Wire eval cases to your feature (one-time, after §6)
+
+Stock kit evals ship with stub `PROMPT.md` files. After you fill `specs/001-personal-greeting/`, point each deterministic case at your artifacts via `ground-truth.json` → `input_path` (repo-relative). The harness loads that file instead of `PROMPT.md` when grading.
+
+**Already wired in this test repo** (for reference):
+
+| Case | `input_path` | Extra fields |
+|------|----------------|--------------|
+| `spec-conformance/case-001` | `specs/001-personal-greeting/feature.spec.md` | — |
+| `stakeholder/semi-technical/case-001-contract-coverage` | `specs/001-personal-greeting/walkthroughs/semi-technical.md` | `changed_contracts` |
+| `stakeholder/technical/case-001-reviewer-table` | `specs/001-personal-greeting/walkthroughs/technical.md` | `required_headers` |
+
+`impl-correctness` and `stakeholder/non-technical` remain **stubs** (LLM-judge / hidden tests) — they do not fail the run.
+
+If you reset the repo (§15) or scaffold a new feature slug, update `input_path` and contract/header lists to match.
+
+### 8.1 Run the harness
+
+```powershell
+Set-Location $REPO\evals
+npm run eval
 # or directly:
-$ node --experimental-strip-types run.mjs
+node --experimental-strip-types run.mjs
+Write-Output $LASTEXITCODE
+Set-Location $REPO
 ```
 
-**Pass conditions:**
+**Pass conditions (after §8.0 wiring):**
 
 - Output begins with `/sad-eval-harness — N pass · N fail · N error · N stub · N skip`.
-- Stubs do **not** fail the run (exit 0).
+- Deterministic cases: **3 pass** (`spec-conformance`, semi-technical contract coverage, technical reviewer table).
+- Stub cases: **2 stub** (`impl-correctness`, non-technical LLM-judge) — stubs do **not** fail the run.
+- **`Write-Output $LASTEXITCODE` prints `0`** (exit 1 only when any **fail** or **error**).
 
-### 8.1 JSON mode
+Before §8.0 wiring, expect **1 fail + 2 error + exit 1** — that is normal on a fresh install.
 
-```bash
-$ node --experimental-strip-types run.mjs --json | python -m json.tool
+### 8.2 JSON mode
+
+```powershell
+Set-Location $REPO\evals
+node --experimental-strip-types run.mjs --json | python -m json.tool
 # expect: { "summary": {...}, "cases": [...] }
+Set-Location $REPO
 ```
 
-### 8.2 Verbose mode (per-case detail)
+### 8.3 Verbose mode (per-case detail)
 
-```bash
-$ node --experimental-strip-types run.mjs --verbose
+```powershell
+Set-Location $REPO\evals
+node --experimental-strip-types run.mjs --verbose
+Set-Location $REPO
+# expect: [OK] on three deterministic cases; [STUB] on two placeholder graders
 ```
 
 ---
@@ -423,32 +456,32 @@ $ node --experimental-strip-types run.mjs --verbose
 
 Website claim: optional reference application; zero-deps; deterministic responses.
 
-```bash
-$ echo '{"jsonrpc":"2.0","id":1,"method":"greet","params":{"name":"Sam"}}' \
-    | python reference/example-server/server.py
+Happy path:
+
+```powershell
+Set-Location $REPO
+'{"jsonrpc":"2.0","id":1,"method":"greet","params":{"name":"Sam"}}' | python reference/example-server/server.py
 # expect: {"jsonrpc": "2.0", "id": 1, "result": {"greeting": "Hello, Sam."}}
 ```
 
-Failure case:
+Failure case (empty name):
 
-```bash
-$ echo '{"jsonrpc":"2.0","id":2,"method":"greet","params":{"name":""}}' \
-    | python reference/example-server/server.py
-# expect: an "error": { "code": -32602, ... } envelope with a length-validation message
+```powershell
+'{"jsonrpc":"2.0","id":2,"method":"greet","params":{"name":""}}' | python reference/example-server/server.py
+# expect: "error": { "code": -32602, ... } with a length-validation message
 ```
 
 Unknown method:
 
-```bash
-$ echo '{"jsonrpc":"2.0","id":3,"method":"farewell","params":{}}' \
-    | python reference/example-server/server.py
+```powershell
+'{"jsonrpc":"2.0","id":3,"method":"farewell","params":{}}' | python reference/example-server/server.py
 # expect: error.code -32601 (unknown method)
 ```
 
 Parse error:
 
-```bash
-$ echo 'not json' | python reference/example-server/server.py
+```powershell
+'not json' | python reference/example-server/server.py
 # expect: error.code -32700 (parse error)
 ```
 
@@ -456,12 +489,13 @@ $ echo 'not json' | python reference/example-server/server.py
 
 ## 10. Run the maturity-readiness card
 
-Website claim: `.sad/scripts/maturity-report.{sh,ps1}` reads the level state + rollback log + survey files and emits a readiness card.
+Website claim: `.sad\scripts\maturity-report.ps1` reads the level state + rollback log + survey files and emits a readiness card.
 
 ### 10.1 Default (text)
 
-```bash
-$ bash .sad/scripts/maturity-report.sh
+```powershell
+Set-Location $REPO
+.\.sad\scripts\maturity-report.ps1
 # expect:
 # /sad-maturity-report
 # ------------------------------------------------------------
@@ -474,41 +508,35 @@ $ bash .sad/scripts/maturity-report.sh
 # Satisfaction avg %    : no surveys recorded yet
 ```
 
-PowerShell:
-
-```powershell
-PS> .\.sad\scripts\maturity-report.ps1
-```
-
 ### 10.2 JSON mode
 
-```bash
-$ bash .sad/scripts/maturity-report.sh --json
+```powershell
+.\.sad\scripts\maturity-report.ps1 -Json
 # expect: structured JSON with current_level, features_*, rollback_*, satisfaction_*
 ```
 
 ### 10.3 Simulate a stakeholder survey
 
-```bash
-$ mkdir -p .sad/state/satisfaction/2026-05
-$ cp .sad/templates/stakeholder-satisfaction-survey.md \
-     .sad/state/satisfaction/2026-05/non-technical.md
+```powershell
+Set-Location $REPO
+New-Item -ItemType Directory -Force -Path .sad\state\satisfaction\2026-05 | Out-Null
+Copy-Item .sad\templates\stakeholder-satisfaction-survey.md .sad\state\satisfaction\2026-05\non-technical.md
 ```
 
 Open the new file, set `Period: 2026-05`, fill the five Likert scores (4, 5, 4, 5, 5 → total 23 / 25 → 92%), and write a Satisfaction line: `**Satisfaction %:** 92`.
 
 Re-run:
 
-```bash
-$ bash .sad/scripts/maturity-report.sh
+```powershell
+.\.sad\scripts\maturity-report.ps1
 # expect:
 # Satisfaction avg %    : 92% (threshold >= 80) -> yes
 ```
 
 ### 10.4 Simulate a rollback
 
-```bash
-$ cp .sad/templates/rollback-log.md .sad/state/rollback-log.md
+```powershell
+Copy-Item .sad\templates\rollback-log.md .sad\state\rollback-log.md -Force
 ```
 
 Add a real data row to the table — for example:
@@ -519,8 +547,8 @@ Add a real data row to the table — for example:
 
 Re-run:
 
-```bash
-$ bash .sad/scripts/maturity-report.sh
+```powershell
+.\.sad\scripts\maturity-report.ps1
 # expect:
 # Rollbacks since level : 1
 # Rollback rate         : 1.000 (threshold <= 0.05) -> no
@@ -530,47 +558,89 @@ $ bash .sad/scripts/maturity-report.sh
 
 ## 11. Verify all hook descriptors are valid JSON
 
-```bash
-$ for f in hooks/*.json; do node -e "JSON.parse(require('fs').readFileSync('$f'))" && echo "ok  $f"; done
-# expect: 5 "ok  hooks/..." lines, no errors
-```
+Hook descriptors are installed into **this repo**; adapter settings templates live in the **SAD kit** (they are copied into `.claude/` or `.cursor/` only when an adapter is detected — your install reported `assistant: none`, so there is no `adapters\` folder here).
 
-PowerShell:
+### 11.1 Hooks (consuming repo)
 
 ```powershell
-PS> Get-ChildItem hooks -Filter *.json | ForEach-Object {
-PS>   try { Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null; "ok  $($_.Name)" }
-PS>   catch { "FAIL  $($_.Name)  $_" }
-PS> }
+Set-Location $REPO
+Get-ChildItem hooks -Filter *.json | ForEach-Object {
+  try {
+    Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null
+    "ok  $($_.Name)"
+  } catch {
+    "FAIL  $($_.Name)  $_"
+  }
+}
+# expect: 5 "ok  ..." lines, no errors
 ```
 
-Same for the adapter settings:
+### 11.2 Adapter settings (SAD kit source templates)
 
-```bash
-$ for f in adapters/claude-code/settings*.json; do node -e "JSON.parse(require('fs').readFileSync('$f'))" && echo "ok  $f"; done
+Validate the Claude Code settings JSON shipped with the methodology kit:
+
+```powershell
+Get-ChildItem "$SAD\adapters\claude-code\settings*.json" | ForEach-Object {
+  try {
+    Get-Content $_.FullName -Raw | ConvertFrom-Json | Out-Null
+    "ok  $($_.Name)"
+  } catch {
+    "FAIL  $($_.Name)  $_"
+  }
+}
 # expect: 4 "ok" lines (settings.json, settings.persistent.json, settings.windows.json, settings.windows.persistent.json)
+```
+
+**Optional** — if you re-ran `sad-init` with `-Assistant claude-code`, also validate what landed in the consuming repo:
+
+```powershell
+if (Test-Path .claude\settings.json) {
+  Get-Content .claude\settings.json -Raw | ConvertFrom-Json | Out-Null
+  "ok  .claude\settings.json"
+} else {
+  "skip  .claude\settings.json (adapter not installed in this repo)"
+}
 ```
 
 ---
 
 ## 12. CI workflows (GitHub Actions)
 
-Four workflows ship under `.github/workflows/`. They run on GitHub when this repo is pushed; locally you only verify YAML validity.
+Four example workflows ship in the **SAD kit** at `$SAD\.github\workflows\`. `sad-init` does **not** copy them into the consuming repo — they are templates you add when you push to GitHub. For this test run, validate YAML in the kit; optionally copy into `$REPO` if you want CI on the test repo.
 
-```bash
-$ for f in .github/workflows/*.yml; do python -c "import yaml,sys; yaml.safe_load(open('$f'))" && echo "ok  $f"; done
+### 12.1 Validate workflow YAML (SAD kit)
+
+```powershell
+Get-ChildItem "$SAD\.github\workflows\*.yml" | ForEach-Object {
+  python -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" $_.FullName
+  if ($LASTEXITCODE -eq 0) { "ok  $($_.Name)" } else { "FAIL  $($_.Name)" }
+}
 # expect: ok lines for sad-doctor.yml, sad-evals.yml, sad-spec-drift-scan.yml, sad-maturity-report.yml
 ```
 
-(If `yaml` isn't installed, `pip install pyyaml` first, or skip to GitHub-side validation by pushing to a branch.)
+If `yaml` isn't installed: `pip install pyyaml` first.
+
+### 12.2 Optional — install workflows into the test repo
+
+```powershell
+Set-Location $REPO
+New-Item -ItemType Directory -Force -Path .github\workflows | Out-Null
+Copy-Item "$SAD\.github\workflows\*.yml" .github\workflows\
+Get-ChildItem .github\workflows\*.yml | ForEach-Object {
+  python -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" $_.FullName
+  if ($LASTEXITCODE -eq 0) { "ok  $($_.Name)" } else { "FAIL  $($_.Name)" }
+}
+```
+
+Or skip local validation and rely on GitHub Actions after you push to a branch.
 
 ---
 
 ## 13. Exercise the requirements-progress script (optional, REQ-traceability projects only)
 
-```bash
+```powershell
 # Skip unless you maintain a REQ-DOC mapping.
-$ python ../sad/scripts/sad_update_requirements_progress.py --help
+python "$SAD\scripts\sad_update_requirements_progress.py" --help
 # expect: usage text listing --mapping, --specs-dir, --output-md, etc.
 ```
 
@@ -580,15 +650,17 @@ $ python ../sad/scripts/sad_update_requirements_progress.py --help
 
 After §3, §4, §5, §6, §7 are all green:
 
-```bash
-$ bash .sad/scripts/doctor.sh
+```powershell
+Set-Location $REPO
+.\.sad\scripts\doctor.ps1
+Write-Output $LASTEXITCODE
 ```
 
 **Final pass condition.** Output:
 
 - `0 red`
-- `≤ 2 yellow` (acceptable: `constitution.articles` if you didn't add A1..A3; `features.any` once you have at least one feature it should be `[OK]`).
-- The feature you created appears as `[OK]  feature.001-personal-greeting.artifacts`.
+- `≤ 2 yellow` (acceptable: `constitution.articles` if you didn't add A1..A3).
+- The feature you created appears as `[OK] feature.001-personal-greeting.artifacts`.
 - Exit code 0.
 
 ---
@@ -597,16 +669,18 @@ $ bash .sad/scripts/doctor.sh
 
 To repeat the test from a clean slate, you can either:
 
-```bash
+```powershell
+Set-Location $REPO
+
 # Local reset (keep installed kit; throw out the test feature)
-$ rm -rf specs/001-personal-greeting
-$ rm -f .sad/state/rollback-log.md
-$ rm -rf .sad/state/satisfaction/
+Remove-Item -Recurse -Force specs\001-personal-greeting -ErrorAction SilentlyContinue
+Remove-Item -Force .sad\state\rollback-log.md -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force .sad\state\satisfaction -ErrorAction SilentlyContinue
 
 # Or full reset (re-install the SAD kit from scratch)
-$ git clean -fdx
-$ git checkout .
-$ ../sad/scripts/sad-init.sh --persistent .
+git clean -fdx
+git checkout .
+& "$SAD\scripts\sad-init.ps1" -TargetDir $REPO -Persistent
 ```
 
 ---
@@ -615,20 +689,20 @@ $ ../sad/scripts/sad-init.sh --persistent .
 
 | # | What is tested | Script(s) exercised | Files inspected | Pass signal |
 |---|---|---|---|---|
-| 1 | Install (dry-run + real + minimal) | `sad-init.{sh,ps1}` | `.sad/`, `commands/`, `agents/`, `hooks/`, `evals/`, `reference/`, root docs, adapter files | doctor green section, all listed dirs present |
-| 2 | Doctor health-check (text / JSON / quiet) | `doctor.{sh,ps1}` | reports stdout, JSON | exit 0 on a clean install |
-| 3 | Constitution bootstrap with `--template` | `sad-constitution` prompt | `.sad/memory/constitution.md` | doctor's `constitution.identity` and `constitution.maturity` go green |
+| 1 | Install (dry-run + real + minimal) | `sad-init.ps1` | `.sad/`, `commands/`, `agents/`, `hooks/`, `evals/`, `reference/`, root docs, adapter files | doctor green section, all listed dirs present |
+| 2 | Doctor health-check (text / JSON / quiet) | `doctor.ps1` | reports stdout, JSON | exit 0 on a clean install |
+| 3 | Constitution bootstrap with `--template` | manual copy + edit | `.sad/memory/constitution.md` | doctor's `constitution.identity` and `constitution.maturity` go green |
 | 4 | Stakeholder tier files | n/a | `.sad/stakeholders/*.md` | doctor three green stakeholder rows |
-| 5 | Per-feature scaffold | `create-feature.{sh,ps1}` | `specs/001-personal-greeting/` | 12 templates + 4 subdirs present |
-| 6 | Tier-routed approval gate | `check-tier-approvals.{sh,ps1}` | three walkthrough files | exit 0 when all three checked; exit 2 when any unchecked |
-| 7 | Drift scan + state update | `drift-scan.{sh,ps1}`, `update-state.{sh,ps1}` | `.sad/state/sad-state.md` | exit 0 once reconciliation exists; sad-state.md fields update |
-| 8 | Eval harness | `evals/run.mjs` | `evals/**/EVAL.ts` | exit 0; structured JSON in --json mode |
+| 5 | Per-feature scaffold | `create-feature.ps1` | `specs/001-personal-greeting/` | 12 templates + 4 subdirs present |
+| 6 | Tier-routed approval gate | `check-tier-approvals.ps1` | three walkthrough files | exit 0 when all three checked; exit 2 when any unchecked |
+| 7 | Drift scan + state update | `drift-scan.ps1`, `update-state.ps1` | `.sad/state/sad-state.md` | exit 0 once reconciliation exists; sad-state.md fields update |
+| 8 | Eval harness | `evals/run.mjs` | `evals/**/EVAL.ts` | exit 0; structured JSON in `--json` mode |
 | 9 | Reference MCP server | `reference/example-server/server.py` | JSON-RPC stdin/stdout | deterministic response on happy path; correct error codes on each failure mode |
-| 10 | Maturity report | `maturity-report.{sh,ps1}` | `.sad/state/maturity-level.json`, surveys, rollback log | thresholds computed correctly across simulated state |
-| 11 | Hook JSON validity | `node` / `ConvertFrom-Json` | `hooks/*.json`, `adapters/claude-code/settings*.json` | all parse without error |
-| 12 | CI workflow YAML | `python -c yaml.safe_load` | `.github/workflows/*.yml` | all parse without error |
+| 10 | Maturity report | `maturity-report.ps1` | `.sad/state/maturity-level.json`, surveys, rollback log | thresholds computed correctly across simulated state |
+| 11 | Hook JSON validity | `ConvertFrom-Json` | `hooks/*.json` (repo); `$SAD/adapters/claude-code/settings*.json` (kit) | all parse without error |
+| 12 | CI workflow YAML | `python -c yaml.safe_load` | `$SAD/.github/workflows/*.yml` (kit templates) | all parse without error |
 | 13 | Requirements progress (optional) | `sad_update_requirements_progress.py` | mapping markdown, specs | non-zero exit only when mapping is missing |
-| 14 | Final doctor sweep | `doctor.{sh,ps1}` | end-to-end repo state | 0 red, ≤ 2 yellow |
+| 14 | Final doctor sweep | `doctor.ps1` | end-to-end repo state | 0 red, ≤ 2 yellow |
 
 ---
 
@@ -636,13 +710,19 @@ $ ../sad/scripts/sad-init.sh --persistent .
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `sad-init` says `detected assistant: none` | No `.claude/`, `.cursor/`, etc. in target | Pass `--assistant claude-code` (or your tool) explicitly |
-| Doctor says `[FAIL] constitution.identity` | Placeholders `[name]` / `[who]` still in file | Edit `.sad/memory/constitution.md` and replace them |
+| `Cannot find path '...\sad-init.ps1'` | `$SAD` not set, or kit not at `C:\SAD` | Paste the session bootstrap lines; confirm `(Test-Path C:\SAD)` is `True` |
+| `The token '&&' is not a valid statement separator` | Bash syntax pasted into PowerShell | Use `;` between commands; use this doc's PowerShell blocks only |
+| PSReadLine: *Niedozwolone znaki w ścieżce* / *illegal characters in path* when checking exit code | Pasting `"exit=$LASTEXITCODE"` triggers a broken custom key handler | Use `Write-Output $LASTEXITCODE` on its own line instead |
+| `Cannot find path 'C:\c\SAD-testing-repo'` | Git Bash path `/c/...` used in PowerShell | Use `C:\SAD-testing-repo` or `Set-Location $REPO` |
+| `sad-init` says `detected assistant: none` | No `.claude/`, `.cursor/`, etc. in target | Pass `-Assistant claude-code` (or your tool) explicitly to `sad-init.ps1` |
+| Doctor says `[FAIL] constitution.identity` | Placeholders `[name]` / `[who]` still in file | Edit `.sad\memory\constitution.md` and replace them |
 | `check-tier-approvals` says `Tier approval not checked for 'X'` | Checkbox is `- [ ]` not `- [x]`, or label text changed | Match the template exactly: `- [x] X reviewer: <name>, <date>` |
-| Eval runner says `experimental-strip-types` not recognized | Node < 22.6 | Upgrade Node or use vitest/jest |
-| Reference server returns nothing on stdin | Empty input or process not reading stdin | Echo full JSON line with newline before piping |
-| Maturity report says `Satisfaction avg % : no surveys recorded yet` | No files under `.sad/state/satisfaction/<YYYY-MM>/` | Create at least one survey file from the template |
-| Hooks fail to fire in Claude Code on Windows | POSIX settings.json was installed instead of Windows variant | Re-run `sad-init.ps1` (PowerShell installer auto-selects the Windows variant); confirm `.claude/settings.json` content references `powershell -File .sad/scripts/*.ps1` |
+| Eval runner says `experimental-strip-types` not recognized | Node < 22.6 | Upgrade Node |
+| Reference server returns nothing on stdin | Empty input or process not reading stdin | Pipe a full JSON line with quotes as shown in §9 |
+| Maturity report says `Satisfaction avg % : no surveys recorded yet` | No files under `.sad\state\satisfaction\<YYYY-MM>\` | Create at least one survey file from the template (§10.3) |
+| Eval harness exits 1 with 1 fail + 2 error on fresh install | Eval `PROMPT.md` stubs not wired to `specs/` artifacts | Complete §8.0 (`ground-truth.json` → `input_path`); re-run — expect 3 pass · 2 stub · exit 0 |
+| `Cannot find path '...\adapters\claude-code'` | Adapter templates are in **`C:\SAD`**, not copied to repo when `detected assistant: none` | Use §11.2: `"$SAD\adapters\claude-code\settings*.json"`; or re-run `sad-init.ps1 -Assistant claude-code` |
+| `Cannot find path '...\.github\workflows'` | CI workflow templates are in **`C:\SAD\.github\workflows`**, not installed by `sad-init` | Use §12.1: `"$SAD\.github\workflows\*.yml"`; or copy with §12.2 |
 
 ---
 
@@ -659,4 +739,4 @@ For those, see the SAD repo's own `ROADMAP.md` for known gaps and `SAD_USER_GUID
 
 ## Quick smoke test (5 minutes)
 
-If you only have five minutes, run sections **§1.1**, **§1.2**, **§2.1**, **§5**, **§6.5**, **§8**, **§9**, and **§14** in that order. That confirms install, health check, scaffold, tier gate, eval runner, reference server, and final doctor all work.
+Paste the session bootstrap lines, then run sections **§0**, **§1.1**, **§1.2**, **§2.1**, **§5**, **§6.5**, **§8.0**, **§8.1**, **§9**, and **§14** in that order. That confirms install, health check, scaffold, tier gate, eval wiring + runner, reference server, and final doctor all work.

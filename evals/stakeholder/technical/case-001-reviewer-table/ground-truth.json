@@ -1,0 +1,10 @@
+{
+  "case_id": "stakeholder-technical-001",
+  "input_path": "specs/001-personal-greeting/walkthroughs/technical.md",
+  "required_headers": [
+    "correctness",
+    "security",
+    "architectural-conformance"
+  ],
+  "notes": "Adjust required_headers to match your reviewer fleet."
+}
