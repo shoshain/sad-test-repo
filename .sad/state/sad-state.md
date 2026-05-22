@@ -22,6 +22,6 @@
 
 ## Resume prompt (paste into agent)
 
-```
+```text
 Continue SAD for feature [slug]. Read .sad/state/sad-state.md and specs/[slug]/feature.spec.md. Next step: [step].
 ```

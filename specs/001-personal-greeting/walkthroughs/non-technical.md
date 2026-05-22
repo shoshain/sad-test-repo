@@ -25,7 +25,7 @@ when invalid.
    and format, and prepares the welcome message.
 3. **What the user sees.** On the next login, Sam sees: "Hello, Sam."
 
-**Decision: how to format the welcome line**
+#### Decision: how to format the welcome line
 
 - **Alternatives considered:** free-form template chosen by the user; fixed prefix only
   ("Welcome back"); full sentence with the user's text embedded.
@@ -40,7 +40,7 @@ when invalid.
 3. **What the user sees.** An error indicating the greeting must be between 1 and 140
    characters; nothing is saved.
 
-**Decision: reject vs truncate**
+#### Decision: reject vs truncate
 
 - **Alternatives considered:** silently truncate to 140 chars; warn but save partial text.
 - **Choice we made:** reject entirely.
@@ -61,7 +61,7 @@ manual CLI check: run `node src/greeting.js Sam` from the repo root — expect
 ## Acceptance criteria coverage
 
 | Criterion | Evidence |
-|---|---|
+| --- | --- |
 | AC1.1 | Scenario 1 — valid 1..140-char greeting accepted and displayed as "Hello, Sam." |
 | AC1.2 | Scenario 2 — input over 140 chars rejected with clear error |
 | AC2.1 | Scenario 1 — returned welcome line shown on successful validation (display step) |

@@ -38,7 +38,7 @@ Constitution amendments require: maintainer + (for any change touching A1–A3) 
 ## Article Index (for `architectural-conformance` rubric)
 
 | ID | Title |
-|----|--------|
+| ---- | -------- |
 | A1 | Semantic versioning policy |
 | A2 | Public API surface definition |
 | A3 | Deprecation lifecycle |
