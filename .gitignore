@@ -1,0 +1,27 @@
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# Test outputs / artifacts
+/coverage/
+/dist/
+/build/
+*.log
+
+# SAD local state (do NOT commit telemetry or transient drift reports)
+.sad/state/telemetry.json
+.sad/state/drift-report.md
+
+# Eval run snapshots (kept as CI artifacts only)
+evals/last-run.json
+sad-doctor-report.json
+maturity-report.json
