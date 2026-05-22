@@ -122,8 +122,11 @@ Set-Location $REPO
 - `.sad/`, `commands/`, `agents/`, `hooks/`, `evals/`, `examples/`, `reference/` all appear in this repo.
 - `LIFECYCLE.md`, `CHEATSHEET.md`, `QUICKSTART.md`, `MATURITY.md`, `ROLES.md`, `MANIFESTO.md`, `NOVEL.md`, `GLOSSARY.md`, `DAEMON.md`, `ATTRIBUTION.md`, `SAD_USER_GUIDE.md` all land at this repo's root.
 - `AGENTS.md` is written at the root with the declared-precedence block.
-- If the adapter detected was `claude-code`, `.claude/settings.json` exists (Windows variant on Windows), `.claude/skills/sad/SKILL.md` exists, and `.claude/commands/sad-*.md` contains 21 pointer files.
+- **(new in v0.2)** `commands/sad-next.md` is present (the conductor command spec) and `.sad/scripts/next-step.ps1` + `.sad/scripts/next-step.sh` are present (the state inspector).
+- If the adapter detected was `claude-code`, `.claude/settings.json` exists (Windows variant on Windows), `.claude/skills/sad/SKILL.md` exists, and `.claude/commands/sad-*.md` contains 22 pointer files (was 21 before v0.2 — the new one is `sad-next.md`).
 - The installer ends by running `/sad-doctor` and prints its report.
+
+**Refresh note.** If you already installed an older version of the kit into this repo, re-run the same command — `Copy-Dir` adds new files (like `next-step.ps1`, `sad-next.md`) without `-Force`, but it will **not** overwrite existing edited files. Pass `-Force` only if you want to clobber your current `.sad/state/sad-state.md`, your filled-in constitution, etc.
 
 ### 1.3 Minimal install (alternative path — wipe and redo)
 
@@ -141,8 +144,28 @@ Set-Location $REPO
 Set-Location $REPO
 Get-ChildItem .sad\scripts\ | Sort-Object Name | Format-Table Name
 # expect both .sh and .ps1 for each of:
-#   check-tier-approvals, create-feature, doctor, drift-scan, update-state, maturity-report
+#   check-tier-approvals, create-feature, doctor, drift-scan, update-state,
+#   maturity-report, next-step   ← next-step is new in v0.2
 ```
+
+### 1.5 Preview the `-Schedule` flag (new in v0.2, dry-run)
+
+`sad-init.ps1` now accepts `-Schedule`, which delegates to `scripts\sad-schedule.ps1 -Action install -TargetDir <repo>`. Per `DAEMON.md §2`, SAD does not run a daemon — the cadence work (`drift-scan` daily, `compound-refresh` weekly, `evolve-evals` weekly) is owned by Windows Task Scheduler.
+
+```powershell
+Set-Location $REPO
+& "$SAD\scripts\sad-init.ps1" -TargetDir $REPO -Persistent -Schedule -DryRun
+# expect: standard [sad-init] DRY: ... lines, then:
+#   [sad-init] installing OS scheduled tasks (Task Scheduler) for SAD cadence commands
+#   DRY: would register the following tasks under \SAD\C__SAD-testing-repo :
+#     - SAD-DriftScan
+#     - SAD-CompoundRefresh
+#     - SAD-EvolveEvals
+git status
+# expect: working tree still clean (it was a dry run)
+```
+
+**Pass condition.** Three task names appear under a `\SAD\C__SAD-testing-repo` folder; no tasks are actually registered. The dedicated tests for the scheduler script (install / list / uninstall) live in §15.4 below.
 
 ---
 
@@ -267,6 +290,87 @@ demo/
 stories/
 evals/
 ```
+
+---
+
+## 5.5 Confirm the Phase enum table in `sad-state.md` (new in v0.2)
+
+The conductor (`/sad-next`) and the state inspector (`next-step.{sh,ps1}`) read the `Phase:` value from `.sad/state/sad-state.md` and look it up in a fixed enum table that ships in the template.
+
+```powershell
+Set-Location $REPO
+Get-Content .sad\state\sad-state.md | Select-String 'Phase enum|`none`|`brainstorm`|`walkthrough`|`reconcile`|`compound`'
+# expect: 6 lines — the heading "Phase enum ..." plus enum rows
+```
+
+If this returns no lines, the local `sad-state.md` is from a pre-v0.2 install. Re-merge by hand from `$SAD\.sad\state\sad-state.md` (or run sad-init with `-Force`, but that clobbers your in-progress state).
+
+---
+
+## 5.6 `next-step.ps1` — read-only state inspector (new in v0.2)
+
+The conductor command (`/sad-next`) wraps this script. The SessionStart hook also calls it so every Claude Code / Cursor session opens with a `SAD next step: …` line.
+
+The script reads `.sad/state/sad-state.md`, the constitution, and the active feature directory, and prints one of:
+
+| Form | Meaning | Exit code |
+|---|---|---|
+| `SAD next step: /sad-<command>  -- <reason>` | conductor can advance autonomously | 0 |
+| `SAD next step: GATE walkthrough <slug>  -- awaiting tier approvals` | three-tier human gate | 2 |
+| `SAD next step: GATE reconcile <slug>  -- awaiting semi-technical sign-off` | reconcile gate | 2 |
+| `SAD next step: /sad-setup` | no `.sad/` yet | 3 |
+| `SAD next step: /sad-constitution` | constitution missing or unfilled | 3 |
+
+### 5.6.1 Text mode (current state)
+
+After §3 (constitution filled), §6.4 (walkthroughs authored), and the §7.2 step that wrote `Phase: walkthrough` into the state file:
+
+```powershell
+Set-Location $REPO
+.\.sad\scripts\next-step.ps1
+Write-Output $LASTEXITCODE
+```
+
+**Pass conditions** (Phase = `walkthrough`):
+
+- **All three tier checkboxes ticked** → output is `SAD next step: /sad-analyze  -- all three tiers approved` ; exit code **0**.
+- **Any checkbox still `- [ ]`** → output is `SAD next step: GATE walkthrough 001-personal-greeting  -- awaiting tier approvals -- see specs/001-personal-greeting/walkthroughs/` ; exit code **2**.
+
+The script delegates the actual approval check to `check-tier-approvals.ps1`, which §6.5 already exercises directly.
+
+### 5.6.2 JSON mode
+
+```powershell
+.\.sad\scripts\next-step.ps1 -Json
+```
+
+**Pass condition.** Output is a single line of valid JSON with fields `kind` (`run`/`gate`/`setup`/`done`), `next`, `slug`, `reason`, `exit`. Round-trips:
+
+```powershell
+.\.sad\scripts\next-step.ps1 -Json | ConvertFrom-Json | Format-List
+```
+
+### 5.6.3 Quiet mode (for the SessionStart hook to swallow stdout if needed)
+
+```powershell
+.\.sad\scripts\next-step.ps1 -Quiet
+Write-Output $LASTEXITCODE
+# expect: no stdout ; then 0 or 2 (matching whichever path 5.6.1 took)
+```
+
+### 5.6.4 Negative tests (optional but informative)
+
+**Constitution unfilled.** Temporarily rename your filled constitution:
+
+```powershell
+Rename-Item .sad\memory\constitution.md .sad\memory\constitution.md.bak
+.\.sad\scripts\next-step.ps1
+Write-Output $LASTEXITCODE
+# expect: SAD next step: /sad-constitution  -- constitution missing or has unfilled placeholders ; exit 3
+Rename-Item .sad\memory\constitution.md.bak .sad\memory\constitution.md
+```
+
+**Gate vs run round-trip.** Flip one tier checkbox to `- [ ]`, re-run §5.6.1 → expect exit **2**. Restore to `- [x]`, re-run → expect exit **0**. (Same flip as §6.5's negative test, viewed through the conductor lens.)
 
 ---
 
@@ -665,7 +769,161 @@ Write-Output $LASTEXITCODE
 
 ---
 
-## 15. Cleanup
+## 15. Conductor + scheduler verification (new in v0.2)
+
+This section exercises the four pieces added in v0.2: the `/sad-next` conductor command, the SessionStart-hook wiring that calls `next-step.ps1`, the Cursor adapter mirror, and the OS-scheduler installer (`sad-schedule.ps1`).
+
+`next-step.ps1` itself is already covered in §5.6 and the `-Schedule` flag in §1.5 — this section is about the surrounding plumbing and the standalone scheduler script.
+
+### 15.1 The `/sad-next` conductor command is installed
+
+```powershell
+Set-Location $REPO
+Test-Path commands\sad-next.md
+# expect: True
+Get-Content commands\sad-next.md -TotalCount 20
+# expect: front-matter with `phase: conductor` and a description starting "SAD conductor"
+```
+
+If the claude-code adapter was wired in §1.2, also check its pointer:
+
+```powershell
+if (Test-Path .claude\commands\sad-next.md) {
+  "ok  .claude\commands\sad-next.md"
+} else {
+  "MISSING — re-run sad-init.ps1 (the pointer file is generated on install)"
+}
+```
+
+### 15.2 The Claude Code SessionStart hook calls `next-step.ps1`
+
+The persistent variant of `.claude/settings.json` now appends a call to the inspector so every session opens with the next-step line. (Only meaningful if you installed with `-Persistent` and the adapter is claude-code.)
+
+```powershell
+Set-Location $REPO
+if (Test-Path .claude\settings.json) {
+  Get-Content .claude\settings.json -Raw | ConvertFrom-Json | Out-Null   # JSON valid?
+  Get-Content .claude\settings.json -Raw | Select-String 'next-step'
+  # expect: a line referencing next-step.ps1 (Windows variant) or next-step.sh (POSIX variant)
+} else {
+  "skip — adapter not installed (run sad-init.ps1 -Persistent -Assistant claude-code)"
+}
+```
+
+Also validate the four shipped settings templates in the **SAD kit** — every one of the persistent variants must reference `next-step`:
+
+```powershell
+@(
+  "$SAD\adapters\claude-code\settings.persistent.json",
+  "$SAD\adapters\claude-code\settings.windows.persistent.json"
+) | ForEach-Object {
+  if ((Get-Content $_ -Raw) -match 'next-step') {
+    "ok  $_"
+  } else {
+    "MISSING next-step  $_"
+  }
+}
+# expect: two "ok" lines
+```
+
+### 15.3 The Cursor adapter mirrors the conductor nudge
+
+```powershell
+Get-Content "$SAD\adapters\cursor\sad-routing.persistent.mdc" | Select-String 'sad-next|next-step'
+# expect: at least one line referencing /sad-next or next-step
+```
+
+### 15.4 `sad-schedule.ps1` — install / list / uninstall (dry-run only)
+
+`scripts\sad-schedule.ps1` registers three Windows Scheduled Tasks under `\SAD\<safe-target-name>\`:
+
+| Task | Cadence | Action |
+|---|---|---|
+| `SAD-DriftScan` | daily 09:00 | runs `.sad\scripts\drift-scan.ps1` |
+| `SAD-CompoundRefresh` | weekly Mon 09:00 | appends a reminder to `.sad\state\scheduled-reminders.log` |
+| `SAD-EvolveEvals` | weekly Mon 09:00 | appends a reminder to `.sad\state\scheduled-reminders.log` |
+
+#### 15.4.1 Dry-run install
+
+```powershell
+Set-Location $REPO
+& "$SAD\scripts\sad-schedule.ps1" -Action install -TargetDir $REPO -DryRun
+```
+
+**Pass condition.** Output:
+
+```
+DRY: would register the following tasks under \SAD\C__SAD-testing-repo :
+  - SAD-DriftScan
+  - SAD-CompoundRefresh
+  - SAD-EvolveEvals
+```
+
+No tasks should appear in Task Scheduler.
+
+#### 15.4.2 List (before any real install)
+
+```powershell
+& "$SAD\scripts\sad-schedule.ps1" -Action list -TargetDir $REPO
+# expect: (no SAD scheduled tasks for C:\SAD-testing-repo)
+```
+
+#### 15.4.3 (Optional) Real install + verify + uninstall
+
+Skip this unless you actually want three tasks firing at 09:00 daily/weekly on your machine until you remove them.
+
+```powershell
+& "$SAD\scripts\sad-schedule.ps1" -Action install -TargetDir $REPO
+# expect: three "Registered: \SAD\C__SAD-testing-repo\..." lines
+
+& "$SAD\scripts\sad-schedule.ps1" -Action list -TargetDir $REPO
+# expect: same three task paths
+
+Get-ScheduledTask -TaskPath "\SAD\C__SAD-testing-repo\" -ErrorAction SilentlyContinue |
+  Select-Object TaskName, State
+# expect: three rows, State = Ready
+
+& "$SAD\scripts\sad-schedule.ps1" -Action uninstall -TargetDir $REPO
+# expect: three "Removed: ..." lines
+
+& "$SAD\scripts\sad-schedule.ps1" -Action list -TargetDir $REPO
+# expect: (no SAD scheduled tasks for C:\SAD-testing-repo)
+```
+
+#### 15.4.4 Bash sibling parity
+
+```powershell
+Get-ChildItem "$SAD\scripts\sad-schedule.*" | Sort-Object Name | Format-Table Name
+# expect: sad-schedule.ps1 and sad-schedule.sh
+```
+
+Both files exist; the `.sh` variant works the same on POSIX or WSL, with the action names `install` / `uninstall` / `list` / `dry-run install` (see `$SAD\scripts\sad-schedule.sh` header for the equivalent syntax).
+
+### 15.5 End-to-end "what's next?" loop
+
+This is the user-facing payoff. Without invoking the conductor inside an assistant, simulate what the conductor itself would print:
+
+```powershell
+Set-Location $REPO
+.\.sad\scripts\next-step.ps1
+# Suppose: SAD next step: GATE walkthrough 001-personal-greeting  -- awaiting tier approvals
+#
+# Author ticks the three approval boxes (already done in §6.4 for this test).
+#
+.\.sad\scripts\check-tier-approvals.ps1 specs\001-personal-greeting
+Write-Output $LASTEXITCODE
+# expect: 0
+#
+.\.sad\scripts\update-state.ps1 -Phase walkthrough-approved
+.\.sad\scripts\next-step.ps1
+# expect: SAD next step: /sad-analyze  -- walkthroughs approved (exit 0)
+```
+
+Each subsequent state transition (`/sad-analyze` → `Phase: analyze` → next-step prints `/sad-tasks`, etc.) walks the enum table from §5.5. The conductor command — which you would actually invoke inside Claude Code or Cursor as `/sad-next` — automates this loop and stops at each gate.
+
+---
+
+## 16. Cleanup
 
 To repeat the test from a clean slate, you can either:
 
@@ -676,6 +934,9 @@ Set-Location $REPO
 Remove-Item -Recurse -Force specs\001-personal-greeting -ErrorAction SilentlyContinue
 Remove-Item -Force .sad\state\rollback-log.md -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force .sad\state\satisfaction -ErrorAction SilentlyContinue
+
+# If you ran §15.4.3 (real schedule install), undo it:
+& "$SAD\scripts\sad-schedule.ps1" -Action uninstall -TargetDir $REPO
 
 # Or full reset (re-install the SAD kit from scratch)
 git clean -fdx
@@ -703,6 +964,11 @@ git checkout .
 | 12 | CI workflow YAML | `python -c yaml.safe_load` | `$SAD/.github/workflows/*.yml` (kit templates) | all parse without error |
 | 13 | Requirements progress (optional) | `sad_update_requirements_progress.py` | mapping markdown, specs | non-zero exit only when mapping is missing |
 | 14 | Final doctor sweep | `doctor.ps1` | end-to-end repo state | 0 red, ≤ 2 yellow |
+| 1.5 | `-Schedule` flag (dry-run) | `sad-init.ps1 -Schedule -DryRun` | Task Scheduler (no writes) | three task names printed under `\SAD\C__SAD-testing-repo` |
+| 5.5 | Phase enum present | n/a (read-only) | `.sad/state/sad-state.md` | enum table with 16 rows |
+| 5.6 | `next-step.ps1` state inspector | `next-step.ps1`, `next-step.ps1 -Json`, `-Quiet` | state file + walkthroughs + constitution | correct `kind`/`exit` for run vs gate vs setup paths |
+| 15.1–15.3 | `/sad-next` conductor wiring | n/a | `commands/sad-next.md`, `.claude/settings.json`, Cursor MDC | all three reference `next-step` / `sad-next` |
+| 15.4 | `sad-schedule.ps1` install/list/uninstall (dry-run) | `sad-schedule.ps1` | Task Scheduler | three SAD-* tasks listed in dry-run; list empty before real install |
 
 ---
 
@@ -740,3 +1006,5 @@ For those, see the SAD repo's own `ROADMAP.md` for known gaps and `SAD_USER_GUID
 ## Quick smoke test (5 minutes)
 
 Paste the session bootstrap lines, then run sections **§0**, **§1.1**, **§1.2**, **§2.1**, **§5**, **§6.5**, **§8.0**, **§8.1**, **§9**, and **§14** in that order. That confirms install, health check, scaffold, tier gate, eval wiring + runner, reference server, and final doctor all work.
+
+For the v0.2 conductor + scheduler additions, also run **§1.5**, **§5.5**, **§5.6**, **§15.1**, **§15.2**, **§15.4.1**, **§15.4.2** — those four cover every new file and exit-code path without registering any real Scheduled Task.
