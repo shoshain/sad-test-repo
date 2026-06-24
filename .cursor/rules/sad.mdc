@@ -1,0 +1,35 @@
+<!-- archangel-pack: sad@0.1.0 -->
+---
+description: "Methodology rules from the Stakeholder-Anchored Development pack (sad@0.1.0). Trigger when the user references the active spec or lifecycle phase."
+alwaysApply: false
+globs:
+  - "specs/*/**"
+---
+
+# Stakeholder-Anchored Development — Archangel methodology rule (pack `sad@0.1.0`)
+
+> Synthesised by Archangel. To remove cleanly:
+> `archangel methodology unsync-host --pack sad --host cursor`
+> Hand edits to this file are clobbered on next sync — clone the file under a different name to fork.
+
+## Lifecycle phases
+
+- [ ] **brainstorm** (1) — Brainstorm
+- [ ] **specify** (2) — Specify
+- [ ] **clarify** (3) — Clarify
+- [ ] **impact-forecast** (4) — Impact Forecast
+- [ ] **plan** (5) — Plan
+- [ ] **walkthrough** (6) — Walkthrough (tier-routed approval)
+- [ ] **analyze** (7) — Analyze
+- [ ] **tasks** (8) — Tasks
+- [ ] **implement** (9) — Implement
+- [ ] **review** (10) — Review
+- [ ] **reconcile** (11) — Reconcile
+- [ ] **compound** (12) — Compound (lessons)
+
+## Working under this methodology
+
+1. The active workspace is matched against `specs/*/**` (see manifest).
+2. Each spec dir contains its own `tasks.md` (or pack-declared lifecycle file).
+3. Out-of-scope edits surface as drift events in Archangel.
+4. When proposing changes, name the active spec and lifecycle phase.
